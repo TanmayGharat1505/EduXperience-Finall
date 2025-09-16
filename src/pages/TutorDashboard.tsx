@@ -1374,6 +1374,7 @@ export default function TutorDashboard() {
                 tutorProfile={tutorProfile}
                 userProfile={userProfile}
                 setState={setState}
+                loadRequirements={loadRequirements}
               />
             )}
 
@@ -8040,8 +8041,8 @@ function HelpSupport() {
   );
 }
 
-// Requirements Dashboard Component for Tutors
-function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState }: { onRefresh: () => void; tutorProfile: any; userProfile: any; setState: any }) {
+// Requirements Dashboard Component for Tutors - Fixed loadRequirements prop
+function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState, loadRequirements }: { onRefresh: () => void; tutorProfile: any; userProfile: any; setState: any; loadRequirements: () => void }) {
   const [requirements, setRequirements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequirement, setSelectedRequirement] = useState<any | null>(null);
@@ -8051,8 +8052,58 @@ function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState 
   const [proposedRate, setProposedRate] = useState<number | undefined>();
   const { toast } = useToast();
 
+  // Local loadRequirements function for this component
+  const loadRequirementsLocal = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      console.log('🔍 [RequirementsDashboard] Loading requirements for user:', user.id);
+
+      // Get requirements that match this tutor's profile
+      const { data: requirementsData, error: requirementsError } = await supabase
+        .from('requirements')
+        .select('*')
+        .eq('status', 'active');
+
+      if (requirementsError) {
+        console.error('❌ [RequirementsDashboard] Error loading requirements:', requirementsError);
+        return;
+      }
+
+      console.log('🔍 [RequirementsDashboard] Raw requirements data:', requirementsData);
+
+      if (!requirementsData || requirementsData.length === 0) {
+        console.log('📋 [RequirementsDashboard] No requirements found');
+        setRequirements([]);
+        setLoading(false);
+        return;
+      }
+
+      // Filter requirements based on tutor's subjects
+      const filteredRequirements = requirementsData.filter((req: any) => {
+        if (!tutorProfile?.subjects || !Array.isArray(tutorProfile.subjects)) {
+          return false;
+        }
+        
+        const tutorSubjects = tutorProfile.subjects.map((s: any) => s.toLowerCase());
+        const requirementSubject = req.subject?.toLowerCase();
+        
+        return tutorSubjects.includes(requirementSubject);
+      });
+
+      console.log('🎯 [RequirementsDashboard] Filtered requirements:', filteredRequirements);
+      setRequirements(filteredRequirements);
+    } catch (error) {
+      console.error('❌ [RequirementsDashboard] Error in loadRequirementsLocal:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [tutorProfile]);
+
   useEffect(() => {
-    loadRequirements();
+    loadRequirementsLocal();
     
     // Set up real-time subscription for requirements changes
     const subscription = supabase
@@ -8063,16 +8114,16 @@ function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState 
         table: 'requirements',
         filter: `status=eq.active`
       }, (payload) => {
-        console.log('🔔 [TutorDashboard] Requirements changed:', payload);
+        console.log('🔔 [RequirementsDashboard] Requirements changed:', payload);
         // Reload requirements when any change occurs
-        loadRequirements();
+        loadRequirementsLocal();
       })
       .subscribe();
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadRequirementsLocal]);
 
 
   const handleDecline = async (requirement: any) => {
@@ -8225,7 +8276,7 @@ function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState 
       ));
 
       // Refresh requirements list
-      await loadRequirements();
+      await loadRequirementsLocal();
       onRefresh(); // Refresh parent component
 
       toast({
@@ -8270,7 +8321,7 @@ function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState 
         <div className="flex gap-2">
         <Button 
             className="bg-gradient-primary flex-shrink-0 shadow-sm hover:shadow-md transition-shadow"
-          onClick={() => loadRequirements()}
+          onClick={() => loadRequirementsLocal()}
         >
           <RefreshCw className="h-4 w-4 mr-2" />
           Refresh
@@ -8491,7 +8542,7 @@ function RequirementsDashboard({ onRefresh, tutorProfile, userProfile, setState 
             <div className="flex gap-3 justify-center">
               <Button 
                 variant="outline" 
-                onClick={() => loadRequirements()}
+                onClick={() => loadRequirementsLocal()}
                 className="px-6"
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
